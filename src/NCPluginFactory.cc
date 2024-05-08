@@ -1,3 +1,4 @@
+#include <iostream>
 
 #include "NCPluginFactory.hh"
 #include "NCPhysicsModel.hh"
@@ -51,8 +52,8 @@ NC::Priority NCP::PluginFactory::query( const NC::FactImpl::ScatterRequest& cfg 
 {
   //Must return value >0 if we should do something, and a value higher than
   //100 means that we take precedence over the standard NCrystal factory:
-  if (!cfg.get_incoh_elas())
-    return NC::Priority::Unable;//incoherent-elastic disabled, never do anything.
+  if (cfg.get_inelas()=="none" || cfg.get_inelas()=="0" || cfg.get_inelas()=="false" || cfg.get_inelas()=="sterile")
+    return NC::Priority::Unable;//inelastic disabled, never do anything.
 
   //Ok, we might be applicable. Load input data and check if is something we
   //want to handle:
@@ -71,12 +72,9 @@ NC::ProcImpl::ProcPtr NCP::PluginFactory::produce( const NC::FactImpl::ScatterRe
 
   auto sc_ourmodel = NC::makeSO<PluginScatter>( PhysicsModel::createFromInfo( cfg.info() ) );
 
-  //Now we just need to combine this with all the other physics
-  //(i.e. Bragg+inelastic).  So ask the framework to set this up, except for
-  //incoherent-elastic physics of course since we are now dealing with that
-  //ourselves:
 
-  auto sc_std = globalCreateScatter( cfg.modified("incoh_elas=0") );
+  auto sc_std = globalCreateScatter( cfg.modified("inelas=0") );
+  std::cout << "**  producing\n" << std::endl;
 
   //Combine and return:
   return combineProcs( sc_std, sc_ourmodel );

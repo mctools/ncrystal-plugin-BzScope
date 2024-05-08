@@ -1,2 +1,30 @@
 #!/usr/bin/env python3
-print("Hello")
+
+
+import NCrystal
+
+#Create and use polycrystalline aluminium:
+
+pc = NCrystal.createScatter( "/home/caixx/git/ncplugin-PiXiu/testcode/data/custom.ncmat" )
+wavelength = 2.5
+xsect = pc.xsect(wl=wavelength)
+
+for i in range(20):
+    scatter_angle,delta_ekin = pc.genscat(wl=wavelength)
+    print( "polycrystal random angle/delta-e at %g Aa is %g degrees and %g meV"%(wavelength,
+                                                                                 scatter_angle*57.2957795131,
+                                                                                 delta_ekin*1e3) )
+#Create and use single-crystal germanium
+
+sc = NCrystal.createScatter("""Ge_sg227.ncmat;dcutoff=0.5;mos=40arcsec;
+                               dir1=@crys_hkl:5,1,1@lab:0,0,1;
+                               dir2=@crys_hkl:0,-1,1@lab:0,1,0""")
+
+wavelength = 1.540
+ekin = NCrystal.wl2ekin(wavelength)
+
+xsect = sc.xsect( wl=wavelength, direction = ( 0.0, 1.0, 1.0 ) )
+print( "singlecrystal Ge x-sect at  %g Aa is %g barn (orientation 1)"%(wavelength,xsect) )
+
+xsect = sc.xsect( wl=wavelength, direction = ( 1.0, 1.0, 0.0 ) )
+print( "singlecrystal Ge x-sect at  %g Aa is %g barn (orientation 2)"%(wavelength,xsect) )

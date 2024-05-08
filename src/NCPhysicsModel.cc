@@ -1,18 +1,33 @@
+#include <iostream>
 #include "NCPhysicsModel.hh"
 
-//Include various utilities from NCrystal's internal header files:
+#include "NCrystal/NCProcImpl.hh"
+#include "NCrystal/NCException.hh"
+
 #include "NCrystal/internal/NCString.hh"
 #include "NCrystal/internal/NCRandUtils.hh"
+#include "NCrystal/internal/NCVDOSToScatKnl.hh"
+#include "NCrystal/internal/NCSABScatter.hh"
 
 bool NCP::PhysicsModel::isApplicable( const NC::Info& info )
 {
+  if(!info.hasDynamicInfo())
+    return false;
+
   //Accept if input is NCMAT data with @CUSTOM_<pluginname> section:
   return info.countCustomSections(pluginNameUpperCase()) > 0;
+
 }
 
 NCP::PhysicsModel NCP::PhysicsModel::createFromInfo( const NC::Info& info )
 {
-  //Parse the content of our custom section. In case of syntax errors, we should
+  return PhysicsModel(info);
+}
+
+NCP::PhysicsModel::PhysicsModel( const NC::Info& info)
+  : m_proc(nullptr)
+{
+    //Parse the content of our custom section. In case of syntax errors, we should
   //raise BadInput exceptions, to make sure users gets understandable error
   //messages. We should try to avoid other types of exceptions.
 
@@ -30,6 +45,8 @@ NCP::PhysicsModel NCP::PhysicsModel::createFromInfo( const NC::Info& info )
   //    <sigmavalue> <wavelength threshold value>
   //
 
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
   //Verify we have exactly one line and two words:
   if ( data.size() != 1 || data.at(0).size()!=2 )
     NCRYSTAL_THROW2(BadInput,"Data in the @CUSTOM_"<<pluginNameUpperCase()
@@ -43,14 +60,45 @@ NCP::PhysicsModel NCP::PhysicsModel::createFromInfo( const NC::Info& info )
     NCRYSTAL_THROW2( BadInput,"Invalid values specified in the @CUSTOM_"<<pluginNameUpperCase()
                      <<" section (should be two positive floating point values)" );
 
-  //Parsing done! Create and return our model:
-  return PhysicsModel(sigma,lambda_cutoff);
-}
+  
 
-NCP::PhysicsModel::PhysicsModel( double sigma, double lambda_cutoff )
-  : m_sigma(sigma),
-    m_cutoffekin(NC::wl2ekin(lambda_cutoff))
-{
+  NC::ProcImpl::ProcComposition::ComponentList components;
+
+  for ( auto& di : info.getDynamicInfoList() ) 
+  {
+    auto di_vdos = dynamic_cast<const NC::DI_VDOS*>(di.get());
+    if (di_vdos) 
+    {
+      NC::ScatKnlData skd = NC::createScatteringKernel(di_vdos->vdosData());
+      // using ScaleGnContributionFct = std::function<double(unsigned)>;
+      // ScatKnlData createScatteringKernel( const VDOSData&,
+      //                                     unsigned vdosluxlvl = 3,//0 to 5, affects binning, Emax, etc.
+      //                                     double targetEmax = 0.0,//if 0, will depend on luxlvl. Error if set to unachievable value.
+      //                                     const VDOSGn::TruncAndThinningParams ttpars = VDOSGn::TruncAndThinningChoices::Default,
+      //                                     ScaleGnContributionFct = nullptr,
+      //                                     Optional<unsigned> override_max_order = NullOpt );
+
+      NC::SABData sabdata(std::move(skd.alphaGrid), std::move(skd.betaGrid), std::move(skd.sab), skd.temperature, 
+      skd.boundXS, skd.elementMassAMU);
+
+      // SABData( VectD&& alphaGrid, VectD&& betaGrid, VectD&& sab,
+      //          Temperature temperature, SigmaBound boundXS, AtomMass elementMassAMU,
+      //          double suggestedEmax = 0 );
+      components.push_back({di->fraction(), NC::makeSO<NC::SABScatter>(std::move(sabdata))});
+      
+    } 
+    else
+      NCRYSTAL_THROW(CalcError, "Error");
+  }
+
+  NC::ProcImpl::ProcPtr procptr = NC::ProcImpl::ProcComposition::consumeAndCombine( std::move(components), NC::ProcessType::Scatter );
+
+  auto rngproducer = NC::getDefaultRNGProducer();
+  auto rng = rngproducer->produce();
+
+  m_proc = std::make_shared<NC::Scatter>( std::move(rngproducer), std::move(rng), std::move(procptr));
+
+
   //Important note to developers who are using the infrastructure in the
   //testcode/ subdirectory: If you change the number or types of the arguments
   //for the constructor here, you should make sure to perform a corresponding
@@ -58,22 +106,103 @@ NCP::PhysicsModel::PhysicsModel( double sigma, double lambda_cutoff )
   //__init__.py, and NCForPython.cc - that way you can still instantiate your
   //model directly from your python test code).
 
-  nc_assert( m_sigma > 0.0 );
-  nc_assert( m_cutoffekin > 0.0);
+
+  // /////////////////////////////////////////////////////////////////////////////
+  // // Expand a vibrational density of state (VDOS) spectrum into a full-blown //
+  // // scattering kernel.                                                      //
+  // The returned type is ScatKnlData::KnlType::SAB;
+  // /////////////////////////////////////////////////////////////////////////////
+
+
+  // using ScaleGnContributionFct = std::function<double(unsigned)>;
+  // ScatKnlData createScatteringKernel( const VDOSData&,
+  //                                     unsigned vdosluxlvl = 3,//0 to 5, affects binning, Emax, etc.
+  //                                     double targetEmax = 0.0,//if 0, will depend on luxlvl. Error if set to unachievable value.
+  //                                     const VDOSGn::TruncAndThinningParams ttpars = VDOSGn::TruncAndThinningChoices::Default,
+  //                                     ScaleGnContributionFct = nullptr,
+  //                                     Optional<unsigned> override_max_order = NullOpt );
+
+  // //The ScaleGnContributionFct argument can be used to apply a scale factor to
+  // //the Gn contribution, at the point where it is used to add a contribution
+  // //into S(alpha,beta). This can for instance be used in the scenario where the
+  // //coherent single-phonon contribution is modelled elsewhere, and therefore the
+  // //G1 contribution should be reduced to take out sigma_coherent. In this case,
+  // //the scaling function should return sigma_incoh/(sigma_coh+sigma_incoh) for
+  // //the argument n==1, and 1.0 for n>1.
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  //2. need to convert ScatKnlData to DI_ScatKnl or SABData
+
+  //   struct ScatKnlData : private MoveOnly {
+  //   VectD alphaGrid, betaGrid, sab;
+  //   Temperature temperature = Temperature{-1.0};
+  //   SigmaBound boundXS = SigmaBound{-1.0};
+  //   AtomMass elementMassAMU = AtomMass{-1.0};
+  //   enum class KnlType { SAB,        //Standard S(alpha,beta), fields have same meaning as on SABData.
+  //                        SCALED_SAB, //Values in sab table are actually S'(alpha,beta)=S(alpha,beta)*exp(beta/2)
+  //                        SCALED_SYM_SAB,//Same + S'(alpha,beta) is an even function in beta, and the kernel is
+  //                        //only specified directly for non-negative beta values.
+  //                        SQW,//alpha/beta/sab values are actually Q/omega/S(Q,omega) values.
+  //                        Unspecified };
+  //   KnlType knltype = KnlType::Unspecified;
+  //   double suggestedEmax = 0;//optional, 0 means not available.
+  //   bool betaGridOptimised = false;//set to true if beta grid is known to not require thickening before sampling.
+  // };
+
+
+    //Construct from SABData and (optionally) an energy grid. The first
+    //constructor takes a DI_ScatKnl object from the DynamicInfo list on an an
+    //Info object, along with (optionally) the unique id of the Info object. If
+    //an energy grid is not supplied, a reasonable default value will be
+    //used. When possible, caching will be enabled by default - making sure that
+    //multiple SABScatter instances based on the same input object will avoid
+    //duplicated resource consumption.
+    //
+    //The vdoslux parameter has no effect if input is not a VDOS. The same goes
+    //for the special vdos2sabExcludeFlag parameter (the meaning of which is
+    //documented in NCDynInfoUtils.hh).
+
+
+    //     //Constructors etc. (all expensive operations forbidden):
+      // SABData( VectD&& alphaGrid, VectD&& betaGrid, VectD&& sab,
+      //          Temperature temperature, SigmaBound boundXS, AtomMass elementMassAMU,
+      //          double suggestedEmax = 0 );
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // 3. create the model
+
+  // DI_ScatKnl is the base of DI_VDOS
+
+  // SABScatter( const DI_ScatKnl&,
+  //             unsigned vdoslux = 3,
+  //             bool useCache = true,
+  //             uint32_t vdos2sabExcludeFlag = 0 );
+  // SABScatter( SABData &&,
+  //             const VectD& energyGrid = VectD() );
+  // SABScatter( shared_obj<const SABData>,
+  //             std::shared_ptr<const VectD> energyGrid = nullptr );
+  // explicit SABScatter( shared_obj<const SAB::SABScatterHelper> );
+  // explicit SABScatter( std::unique_ptr<const SAB::SABScatterHelper> );
+  // SABScatter( SAB::SABScatterHelper&& );
+
+
+
 }
 
 double NCP::PhysicsModel::calcCrossSection( double neutron_ekin ) const
 {
-  if ( neutron_ekin > m_cutoffekin )
-    return m_sigma;
-  return 0.0;
+  return m_proc->crossSectionIsotropic(NC::NeutronEnergy{neutron_ekin}).dbl();
 }
 
 NCP::PhysicsModel::ScatEvent NCP::PhysicsModel::sampleScatteringEvent( NC::RNG& rng, double neutron_ekin ) const
 {
   ScatEvent result;
 
-  if ( ! (neutron_ekin > m_cutoffekin) ) {
+  // m_proc->sampleScatterIsotropic()
+
+  // if ( ! (neutron_ekin > m_cutoffekin) )
+  {
     //Special case: We are asked to sample a scattering event for a neutron
     //energy where we have zero cross section! Although in a real simulation we
     //would usually not expect this to happen, users with custom code might

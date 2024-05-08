@@ -31,7 +31,7 @@ namespace NCPluginNamespace {
 
     //Constructor gets constant cross section value, and the neutron wavelength
     //cutoff:
-    PhysicsModel( double sigma, double lambda_cutoff );
+    PhysicsModel( const NC::Info& );
 
     //Provide cross sections for a given neutron:
     double calcCrossSection( double neutron_ekin ) const;
@@ -42,9 +42,7 @@ namespace NCPluginNamespace {
     ScatEvent sampleScatteringEvent( NC::RNG& rng, double neutron_ekin ) const;
 
   private:
-    //Data members:
-    double m_sigma;
-    double m_cutoffekin;
+    std::shared_ptr<NC::Scatter> m_proc;
   };
 
 }
