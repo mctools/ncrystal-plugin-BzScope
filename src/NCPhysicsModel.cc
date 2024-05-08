@@ -198,29 +198,9 @@ double NCP::PhysicsModel::calcCrossSection( double neutron_ekin ) const
 NCP::PhysicsModel::ScatEvent NCP::PhysicsModel::sampleScatteringEvent( NC::RNG& rng, double neutron_ekin ) const
 {
   ScatEvent result;
-
-  // m_proc->sampleScatterIsotropic()
-
-  // if ( ! (neutron_ekin > m_cutoffekin) )
-  {
-    //Special case: We are asked to sample a scattering event for a neutron
-    //energy where we have zero cross section! Although in a real simulation we
-    //would usually not expect this to happen, users with custom code might
-    //still generate such calls. The only consistent thing to do when the cross
-    //section is zero is to not change the neutron state parameters, which means:
-    result.ekin_final = neutron_ekin;
-    result.mu = 1.0;
-    return result;
-  }
-
-  //Implement our actual model here. Of course it is trivial for the example
-  //model. For a more realistic or complicated model, it might be that
-  //additional helper classes or functions should be created and used, in order
-  //to keep the code here manageable:
-
-  result.ekin_final = neutron_ekin;//Elastic
-  result.mu = randIsotropicScatterMu(rng).dbl();
-
+  auto res = m_proc->sampleScatterIsotropic(NC::NeutronEnergy{neutron_ekin});
+  result.ekin_final = res.ekin.dbl();
+  result.mu = res.mu.dbl();
   return result;
 }
 
