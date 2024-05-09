@@ -8,6 +8,10 @@
 #include "NCrystal/internal/NCRandUtils.hh"
 #include "NCrystal/internal/NCVDOSToScatKnl.hh"
 #include "NCrystal/internal/NCSABScatter.hh"
+#include "NCrystal/internal/NCSABFactory.hh"
+#include "NCrystal/internal/NCSABExtender.hh"
+#include "NCrystal/internal/NCSABIntegrator.hh"
+
 
 bool NCP::PhysicsModel::isApplicable( const NC::Info& info )
 {
@@ -69,27 +73,76 @@ NCP::PhysicsModel::PhysicsModel( const NC::Info& info)
     auto di_vdos = dynamic_cast<const NC::DI_VDOS*>(di.get());
     if (di_vdos) 
     {
-      NC::ScatKnlData skd = NC::createScatteringKernel(di_vdos->vdosData());
-      // using ScaleGnContributionFct = std::function<double(unsigned)>;
-      // ScatKnlData createScatteringKernel( const VDOSData&,
-      //                                     unsigned vdosluxlvl = 3,//0 to 5, affects binning, Emax, etc.
-      //                                     double targetEmax = 0.0,//if 0, will depend on luxlvl. Error if set to unachievable value.
-      //                                     const VDOSGn::TruncAndThinningParams ttpars = VDOSGn::TruncAndThinningChoices::Default,
-      //                                     ScaleGnContributionFct = nullptr,
-      //                                     Optional<unsigned> override_max_order = NullOpt );
+      double incohxs = di_vdos->atomData().incoherentXS().dbl();
+      double scatteringxs = di_vdos->atomData().scatteringXS().dbl();
+      double factor = incohxs/scatteringxs;
+
+      NC::ScatKnlData skd = NC::createScatteringKernel(di_vdos->vdosData(), 3,  0, NC::VDOSGn::TruncAndThinningChoices::Default); 
+                                  // [factor](unsigned n) { 
+                                  //   // std::cout << "order " << n  << "\n";
+                                  //   if(n>1) return 1.;
+                                  //   else return factor; } );
 
       NC::SABData sabdata(std::move(skd.alphaGrid), std::move(skd.betaGrid), std::move(skd.sab), skd.temperature, 
       skd.boundXS, skd.elementMassAMU);
+      // components.push_back({di->fraction(), NC::makeSO<NC::SABScatter>(std::move(sabdata))});
 
-      // SABData( VectD&& alphaGrid, VectD&& betaGrid, VectD&& sab,
-      //          Temperature temperature, SigmaBound boundXS, AtomMass elementMassAMU,
-      //          double suggestedEmax = 0 );
-      components.push_back({di->fraction(), NC::makeSO<NC::SABScatter>(std::move(sabdata))});
-      
+
+      // or
+      auto shrdsab = NC::makeSO<NC::SABData>(std::move(sabdata));
+      auto integrator = NC::makeSO<NC::SAB::SABIntegrator>(std::move(shrdsab), nullptr, std::move(NC::makeSO<NC::SAB::SABNullExtender>()));
+      auto helper = NC::makeSO<const NC::SAB::SABScatterHelper>(std::move(integrator->createScatterHelper()));
+      auto scatter = NC::makeSO<NC::SABScatter>(helper);
+      components.push_back({di->fraction(), (scatter)});
+
     } 
     else
-      NCRYSTAL_THROW(CalcError, "Error");
+      NCRYSTAL_THROW(CalcError, "Not implemented error");
   }
+
+  // NC::SAB::SABScatterHelper a = NC::SAB::createScatterHelper( shared_obj<const NC::SABData> data,
+  //                                                             std::shared_ptr<const VectD> energyGrid );
+  // NC::SABXSProvider &pro = a.xsprovider;
+  // auto en = pro.internalEGrid();
+  // auto xs = pro.internalXSGrid();
+  // pro.set(en, xs, NC::SABNullExtender());
+
+
+  // std::unique_ptr<const NC::SAB::SABScatterHelper> NC::SAB::createScatterHelper( shared_obj<const NC::SABData> data,
+  //                                                                              std::shared_ptr<const VectD> energyGrid )
+  // {
+  //   nc_assert(!!data);
+  //   SABIntegrator si(data,energyGrid.get());
+  //   auto sh = si.createScatterHelper();
+  //   return std::make_unique<SABScatterHelper>(std::move(sh));
+  // }
+
+
+
+  // low order phonon scattering 
+
+  // For the low order coherent scattering, the constructor SABScatter( SAB::SABScatterHelper&& ) should be used to control the extender,
+  // which in this case should always return zero.
+    
+  // SABScatter( SAB::SABScatterHelper&& );
+
+  // SABScatterHelper( SABXSProvider&& xp,
+  //             SABSampler&&sp,
+  //             Optional<std::string> json = NullOpt )
+
+  // SABXSProvider( VectD&& egrid, VectD&& xsvals,
+  //           std::shared_ptr<const SAB::SABExtender> );
+  // where SABExtender should be SABNullExtender() and
+  //     SABSampler( Temperature temperature,
+  //                 VectD&& egrid,
+  //                 std::vector<std::unique_ptr<SABSamplerAtE>>&&,
+  //                 std::shared_ptr<const SAB::SABExtender>,
+  //                 double xsAtEmax,
+  //                 EGridMargin );
+
+
+
+
 
   NC::ProcImpl::ProcPtr procptr = NC::ProcImpl::ProcComposition::consumeAndCombine( std::move(components), NC::ProcessType::Scatter );
 
