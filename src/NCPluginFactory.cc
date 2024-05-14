@@ -71,10 +71,7 @@ NC::ProcImpl::ProcPtr NCP::PluginFactory::produce( const NC::FactImpl::ScatterRe
   //Ok, we are selected as the provider! First create our own scatter model:
 
   auto sc_ourmodel = NC::makeSO<PluginScatter>( PhysicsModel::createFromInfo( cfg.info() ) );
-
-
   auto sc_std = globalCreateScatter( cfg.modified("inelas=0") );
-  std::cout << "**  producing\n" << std::endl;
 
   //Combine and return:
   return combineProcs( sc_std, sc_ourmodel );
