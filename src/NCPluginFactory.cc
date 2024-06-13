@@ -68,11 +68,8 @@ NC::Priority NCP::PluginFactory::query( const NC::FactImpl::ScatterRequest& cfg 
 
 NC::ProcImpl::ProcPtr NCP::PluginFactory::produce( const NC::FactImpl::ScatterRequest& cfg ) const
 {
-  //Ok, we are selected as the provider! First create our own scatter model:
-
   auto sc_ourmodel = NC::makeSO<PluginScatter>( PhysicsModel::createFromInfo( cfg.info() ) );
-  auto sc_std = globalCreateScatter( cfg.modified("inelas=0") );
-
+  auto sc_std = globalCreateScatter( cfg );
   //Combine and return:
   return combineProcs( sc_std, sc_ourmodel );
 }

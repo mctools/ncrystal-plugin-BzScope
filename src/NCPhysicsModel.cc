@@ -3,6 +3,7 @@
 
 #include "NCrystal/NCProcImpl.hh"
 #include "NCrystal/NCException.hh"
+#include "NCrystal/NCDefs.hh"
 
 #include "NCrystal/internal/NCString.hh"
 #include "NCrystal/internal/NCRandUtils.hh"
@@ -37,14 +38,17 @@ NCP::PhysicsModel::PhysicsModel(const NC::Info& info)
   auto raw = info.getCustomSection( pluginNameUpperCase() );
 
   NC::ScatKnlData phononSab;
-  phononSab.knltype = NC::ScatKnlData::KnlType::SCALED_SYM_SAB;
-  phononSab.temperature = NC::Temperature{300.};
+  phononSab.betaGridOptimised = true;
+
+  
+  phononSab.temperature = NC::Temperature{-1};
   // AtomMass should not have any impact to the result, as SABNullExtender 
   // is used for the energy range beyond the range of the single phonon sab 
   phononSab.elementMassAMU = NC::AtomMass{0.1}; 
-  // incoherent model in NCrystal is going to scale sab by SigmaBound,
-  // so it is set to unity 
+  // The incoherent model in NCrystal is going to scale sab by ScatKnlData.SigmaBound.
+  // However the bound scatting lengths are already included in the sab, so it should be unity. 
   phononSab.boundXS = NC::SigmaBound{1};
+
 
   NC::VectD *curField(nullptr);
   double num(0.);
@@ -66,6 +70,19 @@ NCP::PhysicsModel::PhysicsModel(const NC::Info& info)
         }
         else if(word=="sab_scaled") {
           curField = &phononSab.sab;
+          phononSab.knltype = NC::ScatKnlData::KnlType::SCALED_SYM_SAB;
+        }
+        else if(word=="sab") {
+          curField = &phononSab.sab;
+          phononSab.knltype = NC::ScatKnlData::KnlType::SAB;
+        }
+        else if(word=="temperature")
+        {
+          double t(0);
+          NC::safe_str2dbl(line[1], t);
+          phononSab.temperature.set(t);
+          std::cout << "temp " << t << std::endl;
+          break;          
         }
         else
         {
@@ -92,6 +109,14 @@ NCP::PhysicsModel::PhysicsModel(const NC::Info& info)
     }
   }
 
+  // The code for calculating EmaxUpperBound is copied from the NC::validateScatKnlData function in NCScatKnlData.cc
+  const double bmin = phononSab.betaGrid.front();
+  const double amax = phononSab.alphaGrid.back();
+  const double EmaxUpperBound = NC::constant_boltzmann*phononSab.temperature.get()*(bmin-amax)*(bmin-amax)/(4*amax);
+
+  phononSab.suggestedEmax = NC::ncmin(EmaxUpperBound, 100.0);
+
+
   if(phononSab.alphaGrid.size()*phononSab.betaGrid.size()!=phononSab.sab.size())
     NCRYSTAL_THROW(BadInput, "data size error");
 
@@ -104,27 +129,30 @@ NCP::PhysicsModel::PhysicsModel(const NC::Info& info)
   NC::ProcImpl::ProcComposition::ComponentList components;
   components.push_back({1., sglphscatter});
 
-  for ( auto& di : info.getDynamicInfoList() ) 
-  {
-    auto di_vdos = dynamic_cast<const NC::DI_VDOS*>(di.get());
-    if (di_vdos) 
-    {
-      double incohxs = di_vdos->atomData().incoherentXS().dbl();
-      double scatteringxs = di_vdos->atomData().scatteringXS().dbl();
-      double factor = incohxs/scatteringxs; 
+  // if the line "auto sc_std = globalCreateScatter( cfg );"" in the NCPlugin Factory changes to
+  // "auto sc_std = globalCreateScatter( cfg.modified("inelas=0") );", the lines followed show how we can create all the elastic
+  // scattering processes from scratch. This method is potentially useful but may not be friendly for the final integration into the main repo. 
+  // for ( auto& di : info.getDynamicInfoList() ) 
+  // {
+  //   auto di_vdos = dynamic_cast<const NC::DI_VDOS*>(di.get());
+  //   if (di_vdos) 
+  //   {
+  //     double incohxs = di_vdos->atomData().incoherentXS().dbl();
+  //     double scatteringxs = di_vdos->atomData().scatteringXS().dbl();
+  //     double factor = incohxs/scatteringxs; 
 
-      NC::ScatKnlData skd = NC::createScatteringKernel(di_vdos->vdosData(), 3,  0, NC::VDOSGn::TruncAndThinningChoices::Default,
-                                  [factor](unsigned n) { 
-                                    if(n>1) return 1.;
-                                    else return factor; } );
+  //     NC::ScatKnlData skd = NC::createScatteringKernel(di_vdos->vdosData(), 3,  0, NC::VDOSGn::TruncAndThinningChoices::Default,
+  //                                 [factor](unsigned n) { 
+  //                                   if(n>1) return 1.;
+  //                                   else return factor; } );
       
-      NC::SABData sabdata = NC::SABUtils::transformKernelToStdFormat(std::move(skd));
-      components.push_back({di->fraction(), NC::makeSO<NC::SABScatter>(std::move(sabdata))});
+  //     NC::SABData sabdata = NC::SABUtils::transformKernelToStdFormat(std::move(skd));
+  //     components.push_back({di->fraction(), NC::makeSO<NC::SABScatter>(std::move(sabdata))});
       
-    } 
-    else
-      NCRYSTAL_THROW(CalcError, "Not implemented error");
-  }
+  //   } 
+  //   else
+  //     NCRYSTAL_THROW(CalcError, "Not implemented error");
+  // }
 
   NC::ProcImpl::ProcPtr procptr = NC::ProcImpl::ProcComposition::consumeAndCombine( std::move(components), NC::ProcessType::Scatter );
 
