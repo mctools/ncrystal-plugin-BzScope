@@ -54,7 +54,7 @@ int main()
   // Create and use aluminium powder: //
   //////////////////////////////////////
 
-  auto pc = NC::createScatter( "/home/caixx/git/ncplugin-PiXiu/testcode/data/custom.ncmat" );
+  auto pc = NC::createScatter( "/home/caixx/git/ncplugin-BzScope/testcode/data/custom.ncmat" );
 
 
 
