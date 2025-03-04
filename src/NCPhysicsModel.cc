@@ -1,17 +1,16 @@
 #include "NCPhysicsModel.hh"
 
-#include "NCrystal/NCProcImpl.hh"
-#include "NCrystal/NCException.hh"
-#include "NCrystal/NCDefs.hh"
+#include "NCrystal/interfaces/NCProcImpl.hh"
+#include "NCrystal/core/NCException.hh"
 
-#include "NCrystal/internal/NCString.hh"
-#include "NCrystal/internal/NCRandUtils.hh"
-#include "NCrystal/internal/NCVDOSToScatKnl.hh"
-#include "NCrystal/internal/NCSABScatter.hh"
-#include "NCrystal/internal/NCSABFactory.hh"
-#include "NCrystal/internal/NCSABExtender.hh"
-#include "NCrystal/internal/NCSABIntegrator.hh"
-#include "NCrystal/internal/NCSABUtils.hh"
+#include "NCrystal/internal/utils/NCString.hh"
+#include "NCrystal/internal/utils/NCRandUtils.hh"
+#include "NCrystal/internal/vdos/NCVDOSToScatKnl.hh"
+#include "NCrystal/internal/sabscatter/NCSABScatter.hh"
+#include "NCrystal/internal/sab/NCSABFactory.hh"
+#include "NCrystal/internal/sab/NCSABExtender.hh"
+#include "NCrystal/internal/sab/NCSABIntegrator.hh"
+#include "NCrystal/internal/sab/NCSABUtils.hh"
 #include "NCrystal/internal/utils/NCMsg.hh"
 
 
