@@ -1,4 +1,3 @@
-#include <iostream>
 #include "NCPhysicsModel.hh"
 
 #include "NCrystal/NCProcImpl.hh"
@@ -13,6 +12,7 @@
 #include "NCrystal/internal/NCSABExtender.hh"
 #include "NCrystal/internal/NCSABIntegrator.hh"
 #include "NCrystal/internal/NCSABUtils.hh"
+#include "NCrystal/internal/utils/NCMsg.hh"
 
 
 bool NCP::PhysicsModel::isApplicable( const NC::Info& info )
@@ -40,13 +40,13 @@ NCP::PhysicsModel::PhysicsModel(const NC::Info& info)
   NC::ScatKnlData phononSab;
   phononSab.betaGridOptimised = true;
 
-  
+
   phononSab.temperature = NC::Temperature{-1};
-  // AtomMass should not have any impact to the result, as SABNullExtender 
-  // is used for the energy range beyond the range of the single phonon sab 
-  phononSab.elementMassAMU = NC::AtomMass{0.1}; 
+  // AtomMass should not have any impact to the result, as SABNullExtender
+  // is used for the energy range beyond the range of the single phonon sab
+  phononSab.elementMassAMU = NC::AtomMass{0.1};
   // The incoherent model in NCrystal is going to scale sab by ScatKnlData.SigmaBound.
-  // However the bound scatting lengths are already included in the sab, so it should be unity. 
+  // However the bound scatting lengths are already included in the sab, so it should be unity.
   phononSab.boundXS = NC::SigmaBound{1};
 
 
@@ -81,21 +81,21 @@ NCP::PhysicsModel::PhysicsModel(const NC::Info& info)
           double t(0);
           NC::safe_str2dbl(line[1], t);
           phononSab.temperature.set(t);
-          std::cout << "temp " << t << std::endl;
-          break;          
+          NCPLUGIN_MSG("temp " << t);
+          break;
         }
         else
         {
           auto pos = word.find('r');
           if(pos==word.npos) {
-            NCRYSTAL_THROW2(BadInput, "field name " << word << " is unknow ");  
-          }  
+            NCRYSTAL_THROW2(BadInput, "field name " << word << " is unknow ");
+          }
           else
           {
             std::string digit = word.substr(0, pos);
             if(!NC::safe_str2dbl(digit, num))
-              NCRYSTAL_THROW2(BadInput, "can not parse " << digit << " in " << word << " as double");    
-            
+              NCRYSTAL_THROW2(BadInput, "can not parse " << digit << " in " << word << " as double");
+
             std::string times = word.substr(pos+1, word.size()-1);
             int rep(0);
             NC::safe_str2int(times, rep);
@@ -131,25 +131,25 @@ NCP::PhysicsModel::PhysicsModel(const NC::Info& info)
 
   // if the line "auto sc_std = globalCreateScatter( cfg );"" in the NCPlugin Factory changes to
   // "auto sc_std = globalCreateScatter( cfg.modified("inelas=0") );", the lines followed show how we can create all the elastic
-  // scattering processes from scratch. This method is potentially useful but may not be friendly for the final integration into the main repo. 
-  // for ( auto& di : info.getDynamicInfoList() ) 
+  // scattering processes from scratch. This method is potentially useful but may not be friendly for the final integration into the main repo.
+  // for ( auto& di : info.getDynamicInfoList() )
   // {
   //   auto di_vdos = dynamic_cast<const NC::DI_VDOS*>(di.get());
-  //   if (di_vdos) 
+  //   if (di_vdos)
   //   {
   //     double incohxs = di_vdos->atomData().incoherentXS().dbl();
   //     double scatteringxs = di_vdos->atomData().scatteringXS().dbl();
-  //     double factor = incohxs/scatteringxs; 
+  //     double factor = incohxs/scatteringxs;
 
   //     NC::ScatKnlData skd = NC::createScatteringKernel(di_vdos->vdosData(), 3,  0, NC::VDOSGn::TruncAndThinningChoices::Default,
-  //                                 [factor](unsigned n) { 
+  //                                 [factor](unsigned n) {
   //                                   if(n>1) return 1.;
   //                                   else return factor; } );
-      
+
   //     NC::SABData sabdata = NC::SABUtils::transformKernelToStdFormat(std::move(skd));
   //     components.push_back({di->fraction(), NC::makeSO<NC::SABScatter>(std::move(sabdata))});
-      
-  //   } 
+
+  //   }
   //   else
   //     NCRYSTAL_THROW(CalcError, "Not implemented error");
   // }
@@ -176,5 +176,3 @@ NCP::PhysicsModel::ScatEvent NCP::PhysicsModel::sampleScatteringEvent( NC::RNG& 
   result.mu = res.mu.dbl();
   return result;
 }
-
-
