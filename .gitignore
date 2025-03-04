@@ -7,9 +7,6 @@
 #Also needed for vi:
 .*.sw?
 
-#ignore tempory cmake build output and installations:
-/testcode/utils/cache/
-
 #Extra protection against adding in build output created by custom user commands:
 *.so
 *.dylib
@@ -29,9 +26,9 @@
 *.app
 
 __pycache__/
+/venv/
 .vscode/
 
 #Miscellaneous:
 .DS_Store
 vgcore.*
-venv
